@@ -1,8 +1,8 @@
 /*
-  A single header implementation of (shallow) bounding volume hierarchies.
+  bvh.h - A single header implementation of shallow bounding volume 
+  hierarchies [1] using spatial splits [2].
 
-  LICENSE
-
+  LICENSE:
     This is free and unencumbered software released into the public domain.
 
     Anyone is free to copy, modify, publish, use, compile, sell, or
@@ -28,18 +28,10 @@
 
     For more information, please refer to <http://unlicense.org/>
 
-  ABOUT
- 
-    A single header implementation of shallow bounding volume hierarchies [1] 
-    for triangle meshes. Spatial splits [2] can be enabled while building the
-    hierarchies.
-
-  HISTORY
-  
+  HISTORY:
     0.1   Initial release.
 
-  REFERENCES
- 
+  REFERENCES:
     [1] Dammertz, Holger, Johannes Hanika, and Alexander Keller. "Shallow
         bounding volume hierarchies for fast SIMD ray tracing of incoherent 
         rays." Computer Graphics Forum. Vol. 27. No. 4. Blackwell Publishing 
@@ -208,9 +200,9 @@ typedef struct {
   __m128 bx[2];
   __m128 by[2];
   __m128 bz[2];
-} bvh_QBBox;
+} bvh__QBBox;
 
-static void bvh__qbbox_set(bvh_QBBox *quad, uint32_t i,
+static void bvh__qbbox_set(bvh__QBBox *quad, uint32_t i,
                            const bvh__BBox *bbox)
 {
   float *boxes = (float *)quad;
@@ -223,7 +215,7 @@ static void bvh__qbbox_set(bvh_QBBox *quad, uint32_t i,
   boxes[i + 20] = bbox->b[1][2];
 }
 
-static void bvh__qbbox_setzero(bvh_QBBox *quad, uint32_t i)
+static void bvh__qbbox_setzero(bvh__QBBox *quad, uint32_t i)
 {
   float *boxes = (float *)quad;
   bvh__assert(bvh__inrange(i, 0, 3));
@@ -240,9 +232,9 @@ typedef struct bvh_triangle_quad {
   __m128 v0x, v1x, v2x;
   __m128 v0y, v1y, v2y;
   __m128 v0z, v1z, v2z;
-} bvh_QTriangle;
+} bvh__QTriangle;
 
-static void bvh__qtriangle_set(bvh_QTriangle *quad,
+static void bvh__qtriangle_set(bvh__QTriangle *quad,
                                uint32_t i,
                                const float v0[3],
                                const float v1[3],
@@ -280,9 +272,8 @@ static void bvh__qtriangle_set(bvh_QTriangle *quad,
 #define bvh__leaf_quadid(id)                                                   \
   ((id) & 0x07FFFFFF)
 
-
 typedef struct {
-  bvh_QBBox childbboxes;
+  bvh__QBBox childbboxes;
   /* References to the four child nodes. Each reference also encodes the
      type of the child node: if the reference is 'BVH__NODE_EMPTY', the child
      does not exist, else if bvh_isleaf() evaluates to true given the reference,
@@ -297,7 +288,7 @@ typedef struct bvh__Data {
   bvh__Node *nodes; /* 128 bit aligned. */
   uint32_t nnodes;
   uint32_t root;
-  bvh_QTriangle *trianglequads; /* Triangle quadruples */
+  bvh__QTriangle *trianglequads; /* Triangle quadruples */
   bvh_id_quad_t *idquads; /* (Input) triangle ids quadruples */
   uint32_t nquads;
 } bvh__Data;
@@ -392,13 +383,15 @@ static void bvh__afree(void *ptr)
   }
 }
 
-static void *bvh__arealloc (bvh__BuildState *B, void *ptr,
-                            uint32_t sz, uint32_t al) {
-  void *nptr = bvh__amalloc(B, sz, al);
+static void *bvh__arealloc(bvh__BuildState *bs, void *ptr,
+                           uint32_t sz, uint32_t al) 
+{
+  void *nptr = bvh__amalloc(bs, sz, al);
   if (nptr && ptr) {
     bvh__MemHeader *h;
+    uint32_t nsz;
     h = &((bvh__MemHeader *)ptr)[-1];
-    uint32_t nsz = sz > h->size ? h->size : sz;
+    nsz = sz > h->size ? h->size : sz;
     memcpy(nptr, ptr, nsz);
   }
   return nptr;
@@ -419,13 +412,11 @@ static uint32_t bvh__ids_push(bvh__BuildState *bs, uint32_t n)
   return bs->nids - n;
 }
 
-
 typedef struct {
   uint32_t splitaxis;
   bvh__Set seta;
   bvh__Set setb;
 } bvh__SplitResult;
-
 
 static bvh__SplitResult bvh__splitres(const bvh__BuildState *bs)
 {
@@ -553,7 +544,6 @@ static bool bvh__split_default(bvh__BuildState *bs, const bvh__Set *set)
   }
 }
 
-
 /* -- Revising the default split -------------------------------------------- */
 
 #define bvh__rev_gt(bs, ida, idb)                                              \
@@ -669,7 +659,6 @@ static void bvh__split_half(bvh__BuildState *bs, const bvh__Set *set)
   bvh__bbox_intersect(&bs->seta.bbox, &set->bbox);
   bvh__bbox_intersect(&bs->setb.bbox, &set->bbox);
 }
-
 
 /* -- Spatial splits -------------------------------------------------------- */
 
@@ -904,7 +893,7 @@ static uint32_t bvh__makeleaf(bvh__BuildState *bs, const bvh__Set *set)
         bs->quadscap = 1;
       while (bs->quadscap < bs->bvh->nquads)
         bs->quadscap *= 2;
-      bs->bvh->trianglequads = (bvh_QTriangle *)bvh__arealloc(
+      bs->bvh->trianglequads = (bvh__QTriangle *)bvh__arealloc(
           bs, bs->bvh->trianglequads, 
           bs->quadscap * sizeof(*bs->bvh->trianglequads), 16);
       bs->bvh->idquads = (bvh_id_quad_t *)bvh__arealloc(
@@ -1090,7 +1079,7 @@ static void bvh_setray(bvh__QRay *ray, const float o[3], const float d[3],
   ray->tmax = _mm_set_ps1(tmax);
 }
 
-static __m128 bvh_intersect_ray_bbox(const bvh__QRay *r, const bvh_QBBox *b)
+static __m128 bvh__intersect_ray_bbox(const bvh__QRay *r, const bvh__QBBox *b)
 {
   __m128 tmin, tmax, tymin, tymax, tzmin, tzmax, res;
   tmin = _mm_mul_ps(_mm_sub_ps(b->bx[r->nd[0]], r->ox), r->idx);
@@ -1111,9 +1100,9 @@ static __m128 bvh_intersect_ray_bbox(const bvh__QRay *r, const bvh_QBBox *b)
   return res;
 }
 
-static void bvh_intersect_ray_triangle(__m128 *t, __m128 *u, __m128 *v,
-                                       const bvh__QRay *ray,
-                                       const bvh_QTriangle *tr)
+static void bvh__intersect_ray_triangle(__m128 *t, __m128 *u, __m128 *v,
+                                        const bvh__QRay *ray,
+                                        const bvh__QTriangle *tr)
 {
   __m128 e1x, e1y, e1z, e2x, e2y, e2z;
   __m128 px, py, pz, qx, qy, qz;
@@ -1175,9 +1164,9 @@ static void bvh_intersect_ray_triangle(__m128 *t, __m128 *u, __m128 *v,
   *t = _mm_or_ps(_mm_and_ps(res, *t), _mm_andnot_ps(res, _mm_set_ps1(INFINITY)));
 }
 
-static bool bvh_intersect_leaf(const bvh__Data *bvh, uint32_t leafid,
-                               const bvh__QRay *ray, float *t,
-                               float *u, float *v, uint32_t *faceid)
+static bool bvh__intersect_leaf(const bvh__Data *bvh, uint32_t leafid,
+                                const bvh__QRay *ray, float *t,
+                                float *u, float *v, uint32_t *faceid)
 {
   uint32_t i, nq, st;
   __m128 t0, u0, v0;
@@ -1188,14 +1177,14 @@ static bool bvh_intersect_leaf(const bvh__Data *bvh, uint32_t leafid,
 
   /* Trace all quads referenced by the leaf node. */
   {
-    bvh_intersect_ray_triangle(&t0, &u0, &v0, ray, &bvh->trianglequads[st]);
+    bvh__intersect_ray_triangle(&t0, &u0, &v0, ray, &bvh->trianglequads[st]);
     id0 = _mm_set_epi32(bvh->idquads[st][3], bvh->idquads[st][2],
         bvh->idquads[st][1], bvh->idquads[st][0]);
     for (i = 1; i < nq; ++i) {
       __m128 t1, u1, v1, m;
       __m128 id1 = _mm_set_epi32(bvh->idquads[st + i][3], bvh->idquads[st + i][2],
           bvh->idquads[st + i][1], bvh->idquads[st + i][0]);
-      bvh_intersect_ray_triangle(&t1, &u1, &v1, ray, &bvh->trianglequads[st + i]);
+      bvh__intersect_ray_triangle(&t1, &u1, &v1, ray, &bvh->trianglequads[st + i]);
 
       /* For each quad slot: store the results of the closest intersection. */
       m = _mm_cmplt_ps(t1, t0);
@@ -1241,7 +1230,7 @@ bool bvh_trace(const bvh_Handle bvh, float *t, float *u, float *v,
     if (bvh_isempty(nid))
       continue;
     else if (bvh_isleaf(nid)) {
-      if (bvh_intersect_leaf(bvh, nid, &r, &t0, &u0, &v0, &id)) {
+      if (bvh__intersect_leaf(bvh, nid, &r, &t0, &u0, &v0, &id)) {
         if (t0 < *t) {
           r.tmax = _mm_set_ps1(t0);
           *t = t0;
@@ -1256,11 +1245,11 @@ bool bvh_trace(const bvh_Handle bvh, float *t, float *u, float *v,
       uint32_t *och;
       uint32_t mask;
       bvh__assert(top <= 64 && top > 4);
-      in = bvh_intersect_ray_bbox(&r, &bvh->nodes[nid].childbboxes);
+      in = bvh__intersect_ray_bbox(&r, &bvh->nodes[nid].childbboxes);
       ch = _mm_set_epi32(node->childids[3], node->childids[2],
           node->childids[1], node->childids[0]);
       /* Re-order the child references for more efficient ray traversal.
-         See [2] section 2.3 for details. */
+         See [1] section 2.3 for details. */
       mask = ((1 - r.nd[node->axis[1]]) << 0) |
              ((1 - r.nd[node->axis[0]]) << 1) |
              ((    r.nd[node->axis[1]]) << 2) |
