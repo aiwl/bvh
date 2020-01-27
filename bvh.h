@@ -1182,7 +1182,7 @@ static bool bvh__intersect_leaf(const bvh__Data *bvh, uint32_t leafid,
         bvh->idquads[st][1], bvh->idquads[st][0]);
     for (i = 1; i < nq; ++i) {
       __m128 t1, u1, v1, m;
-      __m128 id1 = _mm_set_epi32(bvh->idquads[st + i][3], bvh->idquads[st + i][2],
+      __m128i id1 = _mm_set_epi32(bvh->idquads[st + i][3], bvh->idquads[st + i][2],
           bvh->idquads[st + i][1], bvh->idquads[st + i][0]);
       bvh__intersect_ray_triangle(&t1, &u1, &v1, ray, &bvh->trianglequads[st + i]);
 
@@ -1191,7 +1191,7 @@ static bool bvh__intersect_leaf(const bvh__Data *bvh, uint32_t leafid,
       t0 = _mm_or_ps(_mm_and_ps(m, t1), _mm_andnot_ps(m, t0));
       u0 = _mm_or_ps(_mm_and_ps(m, u1), _mm_andnot_ps(m, u0));
       v0 = _mm_or_ps(_mm_and_ps(m, v1), _mm_andnot_ps(m, v0));
-      id0 = _mm_or_si128(_mm_and_si128(m, id1), _mm_andnot_si128(m, id0));
+      id0 = _mm_or_si128(_mm_and_si128(_mm_castps_si128(m), id1), _mm_andnot_si128(_mm_castps_si128(m), id0));
     }
   }
 
@@ -1245,7 +1245,7 @@ bool bvh_trace(const bvh_Handle bvh, float *t, float *u, float *v,
       uint32_t *och;
       uint32_t mask;
       bvh__assert(top <= 64 && top > 4);
-      in = bvh__intersect_ray_bbox(&r, &bvh->nodes[nid].childbboxes);
+      in = _mm_castps_si128(bvh__intersect_ray_bbox(&r, &bvh->nodes[nid].childbboxes));
       ch = _mm_set_epi32(node->childids[3], node->childids[2],
           node->childids[1], node->childids[0]);
       /* Re-order the child references for more efficient ray traversal.
